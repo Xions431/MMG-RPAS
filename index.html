@@ -786,23 +786,46 @@ function setConn(ok, txt) {
   document.getElementById('conn-txt').textContent = txt;
   p.className = ok ? 'pill pill-on' : (txt==='SIN RED'?'pill pill-off':'pill pill-warn');
 }
+// ── helper: fetch con timeout compatible con todos los browsers ──
+function fetchTimeout(url, opts, ms) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .finally(() => clearTimeout(tid));
+}
+
 async function ping() { await checkConn(); }
 async function checkConn() {
   try {
-    const r = await fetch(`${API}?action=PING&t=${Date.now()}`, {redirect:'follow', signal:AbortSignal.timeout(8000)});
-    const d = await r.json();
-    setConn(d.ok, d.ok?'ONLINE':'ERROR');
-  } catch(e) { setConn(false, navigator.onLine?'ERROR':'SIN RED'); }
+    const r = await fetchTimeout(
+      API + '?action=PING&t=' + Date.now(),
+      { redirect: 'follow' },
+      9000
+    );
+    const txt = await r.text();
+    let d;
+    try { d = JSON.parse(txt); } catch(e) { d = { ok: false }; }
+    setConn(d.ok, d.ok ? 'ONLINE' : 'ERROR API');
+  } catch(e) {
+    setConn(false, navigator.onLine ? 'SIN RESPUESTA' : 'SIN RED');
+  }
 }
 async function apiG(p='', retries=2) {
-  for(let i=0;i<=retries;i++){
+  for(let i=0; i<=retries; i++){
     try {
-      const r = await fetch(`${API}?${p}&t=${Date.now()}`, {redirect:'follow', signal:AbortSignal.timeout(10000)});
-      if(!r.ok) throw new Error(r.status);
-      const d = await r.json(); setConn(true,'ONLINE'); return d;
+      const r = await fetchTimeout(
+        API + '?' + p + '&t=' + Date.now(),
+        { redirect: 'follow' },
+        12000
+      );
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      let d;
+      try { d = JSON.parse(txt); } catch(e) { throw new Error('JSON inválido'); }
+      setConn(true,'ONLINE'); return d;
     } catch(e) {
       if(i===retries){ setConn(false,'SIN RED'); return {ok:false,error:e.toString()}; }
-      await new Promise(res=>setTimeout(res,800*(i+1)));
+      await new Promise(res=>setTimeout(res,900*(i+1)));
     }
   }
 }
@@ -815,14 +838,21 @@ async function apiP(body, retries=2) {
     }
     return {ok:false,error:'Sin conexión'};
   }
-  for(let i=0;i<=retries;i++){
+  for(let i=0; i<=retries; i++){
     try {
-      const r = await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(body),redirect:'follow',signal:AbortSignal.timeout(12000)});
-      if(!r.ok) throw new Error(r.status);
-      const d = await r.json(); setConn(true,'ONLINE'); return d;
+      const r = await fetchTimeout(
+        API,
+        { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body), redirect:'follow' },
+        15000
+      );
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      let d;
+      try { d = JSON.parse(txt); } catch(e) { throw new Error('JSON inválido'); }
+      setConn(true,'ONLINE'); return d;
     } catch(e) {
       if(i===retries){ setConn(false,'SIN RED'); return {ok:false,error:e.toString()}; }
-      await new Promise(res=>setTimeout(res,1000*(i+1)));
+      await new Promise(res=>setTimeout(res,1200*(i+1)));
     }
   }
 }
